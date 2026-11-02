@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Connect Four vs AI — classic 4-in-a-row against a minimax AI with three difficulty levels. Free single-file HTML5 game.">
+<title>Connect Four — 4 in a Row vs AI</title>
+<script>
+// 平台 SDK 按域名条件加载（独立运行时完全不加载，游戏行为不变）
+(function () {
+  var host = location.hostname || "";
+  try {
+    if (host.indexOf("crazygames") !== -1) {
+      var s1 = document.createElement("script");
+      s1.src = "https://sdk.crazygames.com/crazygames-sdk-v3.js";
+      s1.onload = function () {
+        if (window.CrazyGames && window.CrazyGames.SDK) {
+          window.CrazyGames.SDK.init().then(function () {
+            try { window.CrazyGames.SDK.game.loadingStart(); } catch (e) {}
+            window.addEventListener("load", function () { try { window.CrazyGames.SDK.game.loadingStop(); } catch (e) {} });
+          }).catch(function () {});
+        }
+      };
+      document.head.appendChild(s1);
+      window.__portal = "crazygames";
+    } else if (host.indexOf("gamedistribution") !== -1 || host.indexOf("html5.gamedistribution.com") !== -1 || host.indexOf("gd.games") !== -1) {
+      var s2 = document.createElement("script");
+      s2.src = "https://sdk.gamedistribution.com/v2/main.min.js";
+      document.head.appendChild(s2);
+      window.__portal = "gamedistribution";
+    }
+  } catch (e) {}
+})();
+</script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; background:#070912; font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif; }
+  #wrap { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #hud { width:100%; max-width:480px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 14px 6px; color:#e8ecf8; }
+  .hudBox { min-width:96px; }
+  .hudBox.right { text-align:right; }
+  #diffLabel { font-size:11px; letter-spacing:2px; color:#7f8bb5; font-weight:700; }
+  #recordTxt { font-size:12px; font-weight:800; color:#aeb8dd; margin-top:2px; white-space:nowrap; }
+  #turn { flex:1; text-align:center; font-size:15px; font-weight:800; letter-spacing:1px; white-space:nowrap; }
+  #turn.you { color:#3cf0dc; text-shadow:0 0 12px rgba(60,240,220,.55); }
+  #turn.ai  { color:#ff5fdd; text-shadow:0 0 12px rgba(255,95,221,.55); }
+  #turn.off { color:#79819f; }
+  #turn.dots::after { content:""; animation:c4dots 1.2s infinite steps(1); }
+  @keyframes c4dots { 0%{content:"";} 25%{content:".";} 50%{content:"..";} 75%{content:"...";} }
+  #muteBtn { width:38px; height:38px; border-radius:50%; border:1px solid #2b3358; background:#121731; color:#cdd6f4; font-size:16px; line-height:1; cursor:pointer; flex:none; }
+  #muteBtn.off { color:#565e80; text-decoration:line-through; }
+  .stage { position:relative; }
+  canvas { display:block; border-radius:14px; touch-action:none; }
+  .overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(5,7,16,.8); z-index:5; border-radius:14px; }
+  .overlay.show { display:flex; }
+  .panel { background:#101530; border:1px solid #2b3358; border-radius:18px; padding:20px 24px; text-align:center; color:#fff; width:min(90%, 330px); max-height:98%; overflow:auto; }
+  .panel h1 { font-size:24px; letter-spacing:3px; margin-bottom:3px;
+    background:linear-gradient(90deg,#3cf0dc,#ff5fdd); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .panel .sub { color:#8a93b8; font-size:12px; margin-bottom:6px; }
+  .segLabel { font-size:10px; letter-spacing:2px; color:#7f8bb5; margin:11px 0 5px; font-weight:700; }
+  .seg { display:flex; gap:6px; }
+  .seg button { flex:1; padding:9px 0; border-radius:10px; border:1px solid #2b3358; background:#0c1026; color:#aab3d6; font-size:13px; font-weight:700; cursor:pointer; }
+  .seg button.on { border-color:#3cf0dc; color:#eafffd; background:rgba(60,240,220,.12); }
+  .btn { border:none; border-radius:12px; padding:12px 26px; font-size:15px; font-weight:800; cursor:pointer; color:#fff;
+    background:linear-gradient(135deg,#00c9b3,#7b3ff2); margin-top:14px; }
+  .btn.ghost { background:#0c1026; border:1px solid #2b3358; color:#aab3d6; }
+  .btn:active { transform:scale(.97); }
+  .btnRow { display:flex; gap:10px; justify-content:center; }
+  #resTitle { font-size:26px; font-weight:900; margin-bottom:4px; letter-spacing:1px; }
+  #resTitle.win  { color:#3cf0dc; text-shadow:0 0 14px rgba(60,240,220,.6); }
+  #resTitle.lose { color:#ff5f7e; text-shadow:0 0 14px rgba(255,95,126,.5); }
+  #resTitle.draw { color:#ffd76a; }
+  #resRecord { font-size:13px; color:#aeb8dd; font-weight:700; margin-bottom:4px; }
+  #footer { color:#4d5473; font-size:11px; padding:6px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="hudBox"><div id="diffLabel">NORMAL</div><div id="recordTxt">W 0 · L 0 · D 0</div></div>
+    <div id="turn" class="off">CONNECT FOUR</div>
+    <div class="hudBox right"><button id="muteBtn" aria-label="Toggle sound">&#9834;</button></div>
+  </div>
+  <div class="stage">
+    <canvas id="game"></canvas>
+    <div class="overlay show" id="menu"><div class="panel">
+      <h1>CONNECT FOUR</h1>
+      <div class="sub">Line up four discs before the AI does</div>
+      <div class="segLabel">DIFFICULTY</div>
+      <div class="seg" id="segDiff">
+        <button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button>
+      </div>
+      <div class="segLabel">FIRST MOVE</div>
+      <div class="seg" id="segFirst">
+        <button data-v="you" class="on">You</button><button data-v="ai">AI</button><button data-v="random">Random</button>
+      </div>
+      <div id="menuRecord" class="sub" style="margin-top:12px"></div>
+      <button class="btn" id="startBtn">START GAME</button>
+    </div></div>
+    <div class="overlay" id="result"><div class="panel">
+      <h2 id="resTitle">YOU WIN</h2>
+      <div class="sub" id="resSub"></div>
+      <div id="resRecord"></div>
+      <div class="btnRow">
+        <button class="btn" id="againBtn">PLAY AGAIN</button>
+        <button class="btn ghost" id="menuBtn">MENU</button>
+      </div>
+    </div></div>
+  </div>
+  <div id="footer">Connect Four — a free strategy game</div>
+</div>
+<script>
+"use strict";
+/* ================= 画布与自适应 ================= */
+var W = 480, H = 460;
+var COLS = 7, ROWS = 6, CELL = 60, PR = 24;       // PR = 棋子半径
+var BX = (W - COLS * CELL) / 2, BY = 74;          // 棋盘面板左上角
+var canvas = document.getElementById("game");
+var ctx = canvas.getContext("2d");
+var dpr = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = W * dpr; canvas.height = H * dpr;
+ctx.scale(dpr, dpr);
+function fitCanvas() {  // 保持纵横比缩放，兼容竖屏/横屏/窄屏
+  var maxW = Math.min(window.innerWidth - 12, W);
+  var maxH = window.innerHeight - 130;
+  if (maxH < 220) maxH = 220;
+  var s = Math.min(maxW / W, maxH / H);
+  if (s > 1) s = 1;
+  canvas.style.width = Math.round(W * s) + "px";
+  canvas.style.height = Math.round(H * s) + "px";
+}
+window.addEventListener("resize", fitCanvas);
+fitCanvas();
+
+/* ================= 状态 ================= */
+var phase = "menu";          // menu | human | fall | ai | over
+var board = null;            // board[c][r]，r=0 为底行；0 空 / 1 玩家(青) / 2 AI(品红)
+var fall = null;             // 下落动画 {col,row,p,y,vy,targetY,bounces}
+var winCells = null;         // 制胜四连坐标（高亮用）
+var winner = 0;              // 0 平局 / 1 玩家 / 2 AI
+var difficulty = "normal", firstMove = "you";
+var aimCol = 3, flashCol = -1, flashT = 0;
+var muted = false;
+var stats = { easy:{w:0,l:0,d:0}, normal:{w:0,l:0,d:0}, hard:{w:0,l:0,d:0} };
+try { muted = localStorage.getItem("c4_muted") === "1"; } catch (e) {}
+try {
+  var rawStats = JSON.parse(localStorage.getItem("c4_stats") || "null");
+  if (rawStats && rawStats.easy && rawStats.normal && rawStats.hard) stats = rawStats;
+} catch (e) {}
+function saveStats() { try { localStorage.setItem("c4_stats", JSON.stringify(stats)); } catch (e) {} }
+function saveMuted() { try { localStorage.setItem("c4_muted", muted ? "1" : "0"); } catch (e) {} }
+
+/* ================= WebAudio 合成音效（无外部资源） ================= */
+var actx = null;
+function ensureAudio() {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+  } catch (e) {}
+}
+function beep(freq, dur, type, gainv, delay) {
+  if (muted) return;
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+    var t0 = actx.currentTime + (delay || 0);
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gainv || 0.12, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch (e) {}
+}
+function sClick()   { beep(640, 0.05, "sine", 0.06); }
+function sRelease() { beep(500, 0.05, "triangle", 0.05); }
+function sThud()    { beep(120, 0.1, "sine", 0.16); beep(900, 0.03, "square", 0.03); }
+function sBounce(i) { beep(210 / (1 + i * 0.5), 0.05, "sine", 0.07); }
+function sInvalid() { beep(95, 0.16, "square", 0.08); }
+function sWin()     { beep(523.25,0.16,"triangle",0.12,0); beep(659.25,0.16,"triangle",0.12,0.12); beep(783.99,0.16,"triangle",0.12,0.24); beep(1046.5,0.32,"triangle",0.13,0.36); }
+function sLose()    { beep(392,0.2,"sawtooth",0.08,0); beep(311.13,0.2,"sawtooth",0.08,0.16); beep(246.94,0.34,"sawtooth",0.08,0.32); }
+function sDraw()    { beep(440,0.14,"sine",0.1,0); beep(440,0.2,"sine",0.1,0.18); }
+
+/* __AI_START__ */
+// ================= AI（纯函数区，无 DOM 依赖，便于 Node 抽取单测） =================
+// board[c][r]：r=0 底行；0 空 / 1 玩家 / 2 AI
+var C4_COLS = 7, C4_ROWS = 6;
+var C4_ORDER = [3, 2, 4, 1, 5, 0, 6];            // 启发排序：中列优先
+var C4_WIN = 1000000;
+
+function c4NewBoard() {
+  var b = [];
+  for (var c = 0; c < C4_COLS; c++) b.push([0, 0, 0, 0, 0, 0]);
+  return b;
+}
+function c4ValidCols(board) {                     // 候选列裁剪：跳过已满列，按中列优先排序
+  var v = [];
+  for (var i = 0; i < C4_COLS; i++) {
+    var col = C4_ORDER[i];
+    if (board[col][C4_ROWS - 1] === 0) v.push(col);
+  }
+  return v;
+}
+function c4RandomCol(board) {                     // 纯随机可用列（测试/兜底用）
+  var v = [];
+  for (var c = 0; c < C4_COLS; c++) if (board[c][C4_ROWS - 1] === 0) v.push(c);
+  if (!v.length) return -1;
+  return v[(Math.random() * v.length) | 0];
+}
+function c4Set(board, col, row, p) { board[col][row] = p; }
+function c4Heights(board) {                       // heights[c] = 该列下一空行号
+  var h = [];
+  for (var c = 0; c < C4_COLS; c++) {
+    var n = 0;
+    for (var r = 0; r < C4_ROWS; r++) if (board[c][r] !== 0) n++;
+    h.push(n);
+  }
+  return h;
+}
+function c4IsFull(board) {
+  for (var c = 0; c < C4_COLS; c++) if (board[c][C4_ROWS - 1] === 0) return false;
+  return true;
+}
+// (col,row) 落 p 后是否四连（布尔版，搜索热路径零分配）
+function c4IsWin(board, col, row, p) {
+  var dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  for (var d = 0; d < 4; d++) {
+    var dc = dirs[d][0], dr = dirs[d][1], n = 1;
+    for (var s = -1; s <= 1; s += 2) {
+      var c = col + dc * s, r = row + dr * s;
+      while (c >= 0 && c < C4_COLS && r >= 0 && r < C4_ROWS && board[c][r] === p) {
+        n++; c += dc * s; r += dr * s;
+      }
+    }
+    if (n >= 4) return true;
+  }
+  return false;
+}
+// (col,row) 落 p 后返回整条连通四连（高亮/连线用），无则 null
+function c4WinLine(board, col, row, p) {
+  var dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  for (var d = 0; d < 4; d++) {
+    var dc = dirs[d][0], dr = dirs[d][1], cells = [[col, row]];
+    for (var s = -1; s <= 1; s += 2) {
+      var c = col + dc * s, r = row + dr * s;
+      while (c >= 0 && c < C4_COLS && r >= 0 && r < C4_ROWS && board[c][r] === p) {
+        cells.push([c, r]); c += dc * s; r += dr * s;
+      }
+    }
+    if (cells.length >= 4) {
+      cells.sort(function (a, b) { return (a[0] - b[0]) * 10 + (a[1] - b[1]); });
+      return cells;
+    }
+  }
+  return null;
+}
+// 预生成全部 69 个四连窗口（评估函数用）
+var C4_WINDOWS = (function () {
+  var ws = [], dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  for (var c = 0; c < C4_COLS; c++) for (var r = 0; r < C4_ROWS; r++) {
+    for (var d = 0; d < 4; d++) {
+      var dc = dirs[d][0], dr = dirs[d][1], c2 = c + dc * 3, r2 = r + dr * 3;
+      if (c2 < 0 || c2 >= C4_COLS || r2 < 0 || r2 >= C4_ROWS) continue;
+      var w = [];
+      for (var k = 0; k < 4; k++) w.push(c + dc * k, r + dr * k);
+      ws.push(w);
+    }
+  }
+  return ws;
+})();
+// 局面评估：AI(2) 视角，正值对 AI 有利
+function c4Evaluate(board) {
+  var score = 0;
+  for (var i = 0; i < C4_WINDOWS.length; i++) {
+    var w = C4_WINDOWS[i], a = 0, b = 0;
+    for (var k = 0; k < 8; k += 2) {
+      var v = board[w[k]][w[k + 1]];
+      if (v === 2) a++; else if (v === 1) b++;
+    }
+    if (a && b) continue;                          // 混色窗口无价值
+    if (a === 3) score += 120; else if (a === 2) score += 12; else if (a === 1) score += 2;
+    else if (b === 3) score -= 140; else if (b === 2) score -= 14; else if (b === 1) score -= 2;
+  }
+  for (var r = 0; r < C4_ROWS; r++) {              // 中列加成
+    if (board[3][r] === 2) score += 6; else if (board[3][r] === 1) score -= 6;
+  }
+  return score;
+}
+// negamax + alpha-beta；player 视角返回分值；deadline 到点放弃（c4Aborted 置位）
+var c4Nodes = 0, c4Deadline = 0, c4Aborted = false;
+function c4Negamax(board, heights, depth, alpha, beta, player, ply) {
+  c4Nodes++;
+  if ((c4Nodes & 511) === 0 && c4Deadline && Date.now() > c4Deadline) { c4Aborted = true; return 0; }
+  if (depth === 0) return player === 2 ? c4Evaluate(board) : -c4Evaluate(board);
+  var moves = [];
+  for (var i = 0; i < C4_COLS; i++) {
+    var col = C4_ORDER[i];
+    if (heights[col] < C4_ROWS) moves.push(col);   // 中列优先 + 候选列裁剪
+  }
+  if (moves.length === 0) return 0;                // 棋盘满 → 平局
+  var best = -C4_WIN * 2;
+  for (var m = 0; m < moves.length; m++) {
+    var col2 = moves[m], r = heights[col2];
+    board[col2][r] = player; heights[col2]++;
+    var sc;
+    if (c4IsWin(board, col2, r, player)) sc = C4_WIN - ply;   // 越快赢分越高
+    else sc = -c4Negamax(board, heights, depth - 1, -beta, -alpha, 3 - player, ply + 1);
+    heights[col2]--; board[col2][r] = 0;
+    if (c4Aborted) return 0;
+    if (sc > best) best = sc;
+    if (best > alpha) alpha = best;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+// 根搜索：返回 {col, score, nodes, aborted}
+function c4BestMove(board, player, depth, deadline) {
+  var heights = c4Heights(board);
+  c4Nodes = 0; c4Aborted = false; c4Deadline = deadline || 0;
+  var moves = c4ValidCols(board);
+  if (moves.length === 0) return { col: -1, score: 0, nodes: 0, aborted: false };
+  var bestCol = moves[0], bestScore = -Infinity, alpha = -Infinity;
+  for (var m = 0; m < moves.length; m++) {
+    var col = moves[m], r = heights[col];
+    board[col][r] = player; heights[col]++;
+    var sc;
+    if (c4IsWin(board, col, r, player)) sc = C4_WIN;
+    else sc = -c4Negamax(board, heights, depth - 1, -Infinity, -alpha, 3 - player, 1);
+    heights[col]--; board[col][r] = 0;
+    if (c4Aborted) break;
+    if (sc > bestScore) { bestScore = sc; bestCol = col; }
+    if (bestScore > alpha) alpha = bestScore;
+  }
+  return { col: bestCol, score: bestScore, nodes: c4Nodes, aborted: c4Aborted };
+}
+// 按难度选列（入口）：easy 深度1+30%随机 / normal 深度4 / hard 深度6（迭代加深 2-4-6 + 立即胜/必挡预检 + 700ms 截止）
+function c4ChooseMove(board, aiPlayer, difficulty) {
+  var opp = 3 - aiPlayer;
+  var moves = c4ValidCols(board);
+  if (moves.length === 0) return -1;
+
+  if (difficulty === "easy") {
+    if (Math.random() < 0.3) return moves[(Math.random() * moves.length) | 0];
+    return c4BestMove(board, aiPlayer, 1, 0).col;
+  }
+  if (difficulty === "normal") {
+    return c4BestMove(board, aiPlayer, 4, 0).col;
+  }
+
+  // hard：先做 O(1) 战术预检
+  var heights = c4Heights(board), i, col, r;
+  for (i = 0; i < moves.length; i++) {             // 立即胜检测
+    col = moves[i]; r = heights[col];
+    board[col][r] = aiPlayer;
+    var win = c4IsWin(board, col, r, aiPlayer);
+    board[col][r] = 0;
+    if (win) return col;
+  }
+  for (i = 0; i < moves.length; i++) {             // 必挡检测
+    col = moves[i]; r = heights[col];
+    board[col][r] = opp;
+    var block = c4IsWin(board, col, r, opp);
+    board[col][r] = 0;
+    if (block) return col;
+  }
+  // 迭代加深：共享 700ms 截止，超时保留上一层完整结果
+  var best = null, start = Date.now(), deadline = start + 700;
+  for (var d = 2; d <= 6; d += 2) {
+    var res = c4BestMove(board, aiPlayer, d, deadline);
+    if (!res.aborted) best = res;
+    if (res.aborted || Date.now() >= deadline || res.score >= C4_WIN - 40) break;
+  }
+  if (!best) best = c4BestMove(board, aiPlayer, 1, 0);   // 极慢设备兜底
+  return best.col;
+}
+/* __AI_END__ */
+
+/* ================= 棋盘面板（离屏一次绘制，孔洞镂空） ================= */
+var boardLayer = document.createElement("canvas");
+boardLayer.width = W * dpr; boardLayer.height = H * dpr;
+(function paintBoard() {
+  var b = boardLayer.getContext("2d");
+  b.scale(dpr, dpr);
+  var g = b.createLinearGradient(BX, BY, BX, BY + ROWS * CELL);
+  g.addColorStop(0, "#2b5cd9"); g.addColorStop(1, "#15307e");
+  b.fillStyle = g;
+  rr(b, BX, BY, COLS * CELL, ROWS * CELL, 18); b.fill();
+  b.strokeStyle = "rgba(255,255,255,.16)"; b.lineWidth = 2;
+  rr(b, BX + 1, BY + 1, COLS * CELL - 2, ROWS * CELL - 2, 17); b.stroke();
+  b.globalCompositeOperation = "destination-out";  // 镂空 42 个孔
+  for (var c = 0; c < COLS; c++) for (var r = 0; r < ROWS; r++) {
+    b.beginPath();
+    b.arc(BX + c * CELL + CELL / 2, BY + r * CELL + CELL / 2, 25.5, 0, Math.PI * 2);
+    b.fill();
+  }
+  b.globalCompositeOperation = "source-over";
+  b.strokeStyle = "rgba(0,0,0,.4)"; b.lineWidth = 3;   // 孔上缘暗弧 → 凹陷感
+  for (var c2 = 0; c2 < COLS; c2++) for (var r2 = 0; r2 < ROWS; r2++) {
+    b.beginPath();
+    b.arc(BX + c2 * CELL + CELL / 2, BY + r2 * CELL + CELL / 2, 24, Math.PI * 1.08, Math.PI * 1.92);
+    b.stroke();
+  }
+})();
+function rr(c, x, y, w, h, rad) {
+  c.beginPath();
+  c.moveTo(x + rad, y);
+  c.arcTo(x + w, y, x + w, y + h, rad);
+  c.arcTo(x + w, y + h, x, y + h, rad);
+  c.arcTo(x, y + h, x, y, rad);
+  c.arcTo(x, y, x + w, y, rad);
+  c.closePath();
+}
+
+/* ================= 渲染 ================= */
+var PIECE_STYLE = {
+  1: { hi: "#9dfff1", lo: "#0b9e8d", glow: "#2ee9d4" },   // 玩家：青
+  2: { hi: "#ffa9ec", lo: "#b81aa6", glow: "#ff45d8" }    // AI：品红
+};
+function colX(c) { return BX + c * CELL + CELL / 2; }
+function rowY(r) { return BY + (ROWS - 1 - r) * CELL + CELL / 2; }
+function drawDisc(x, y, p, alpha, glow) {
+  var st = PIECE_STYLE[p];
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  if (glow) { ctx.shadowColor = st.glow; ctx.shadowBlur = 15; }
+  var g = ctx.createRadialGradient(x - 7, y - 8, 3, x, y, PR);
+  g.addColorStop(0, st.hi); g.addColorStop(1, st.lo);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, PR, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, PR - 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+function update(dt) {
+  if (flashT > 0) flashT -= dt;
+  if (phase === "fall" && fall) {                  // 重力加速 + 弹跳
+    fall.vy += 3600 * dt;
+    fall.y += fall.vy * dt;
+    if (fall.y >= fall.targetY) {
+      fall.y = fall.targetY;
+      if (Math.abs(fall.vy) > 240 && fall.bounces < 2) {
+        fall.vy = -fall.vy * 0.3;
+        fall.bounces++;
+        sBounce(fall.bounces);
+      } else settle();
+    }
+  }
+}
+function render(t) {
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0d1224"); bg.addColorStop(1, "#070912");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  var c, r, k;
+  for (c = 0; c < COLS; c++) for (r = 0; r < ROWS; r++) {   // 已落棋子
+    var p = board[c][r];
+    if (!p) continue;
+    var a = 1;
+    if (winCells) {
+      var inWin = false;
+      for (k = 0; k < winCells.length; k++) if (winCells[k][0] === c && winCells[k][1] === r) inWin = true;
+      a = inWin ? 1 : 0.32;                        // 非制胜棋子变暗
+    }
+    drawDisc(colX(c), rowY(r), p, a, !winCells || a === 1);
+  }
+  if (phase === "fall" && fall) drawDisc(colX(fall.col), fall.y, fall.p, 1, true);  // 下落棋子画在面板下层
+  ctx.drawImage(boardLayer, 0, 0, W, H);
+  if (phase === "human") {                         // 悬停列 + 幽灵棋子
+    var tintCol = "120,220,255", tintA = 0.05;
+    if (flashT > 0 && flashCol === aimCol) { tintCol = "255,90,110"; tintA = 0.2 * (flashT / 0.5); }
+    ctx.fillStyle = "rgba(" + tintCol + "," + tintA.toFixed(3) + ")";
+    ctx.fillRect(BX + aimCol * CELL + 3, BY, CELL - 6, ROWS * CELL);
+    drawDisc(colX(aimCol), 38, 1, 0.5, true);
+    ctx.fillStyle = "rgba(157,255,241,.5)";
+    ctx.beginPath();
+    ctx.moveTo(colX(aimCol) - 7, 60); ctx.lineTo(colX(aimCol) + 7, 60); ctx.lineTo(colX(aimCol), 68);
+    ctx.closePath(); ctx.fill();
+  }
+  if (winCells) {                                  // 制胜连线高亮描边（脉冲）
+    var pulse = 0.55 + 0.45 * Math.sin(t / 180);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255," + (0.35 + 0.4 * pulse).toFixed(3) + ")";
+    ctx.lineWidth = 4;
+    ctx.shadowColor = "#ffffff"; ctx.shadowBlur = 12;
+    var a0 = winCells[0], a1 = winCells[winCells.length - 1];
+    ctx.beginPath();
+    ctx.moveTo(colX(a0[0]), rowY(a0[1]));
+    ctx.lineTo(colX(a1[0]), rowY(a1[1]));
+    ctx.stroke();
+    for (k = 0; k < winCells.length; k++) {
+      ctx.beginPath();
+      ctx.arc(colX(winCells[k][0]), rowY(winCells[k][1]), PR + 4 + pulse * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (phase === "ai") {                            // AI 思考动画
+    var dots = "", n = 1 + Math.floor(t / 320) % 3;
+    for (var d = 0; d < n; d++) dots += ".";
+    ctx.fillStyle = "rgba(255,95,221,.75)";
+    ctx.font = "700 15px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("AI THINKING" + dots, W / 2, 44);
+  }
+}
+var last = 0;
+function frame(t) {
+  var dt = Math.min((t - last) / 1000, 0.04); last = t;
+  update(dt); render(t);
+  requestAnimationFrame(frame);
+}
+
+/* ================= 对局流程 ================= */
+function startFall(col, p) {
+  var row = -1;
+  for (var r = 0; r < ROWS; r++) if (board[col][r] === 0) { row = r; break; }
+  if (row < 0) return false;                       // 列满（理论不可达，双保险）
+  fall = { col: col, row: row, p: p, y: 38, vy: 60, targetY: rowY(row), bounces: 0 };
+  phase = "fall";
+  setTurnUI();
+  sRelease();
+  return true;
+}
+function settle() {                                // 落定：写盘 → 判胜 → 交次
+  var f = fall; fall = null;
+  board[f.col][f.row] = f.p;
+  sThud();
+  var line = c4WinLine(board, f.col, f.row, f.p);
+  if (line) { winCells = line; winner = f.p; endGame(); return; }
+  if (c4IsFull(board)) { winner = 0; endGame(); return; }
+  if (f.p === 1) aiTurn(); else { phase = "human"; }
+  setTurnUI();
+}
+function humanDrop() {
+  if (phase !== "human") return;
+  if (board[aimCol][ROWS - 1] !== 0) {             // 列满拒绝：蜂鸣 + 红光提示
+    sInvalid(); flashCol = aimCol; flashT = 0.5;
+    return;
+  }
+  startFall(aimCol, 1);
+}
+function aiTurn() {
+  phase = "ai";
+  setTurnUI();
+  var delay = 420 + Math.random() * 380;           // 思考节奏（让动画可感知）
+  var run = function () {
+    setTimeout(function () {
+      if (phase !== "ai") return;                  // 期间可能已重开
+      var col = c4ChooseMove(board, 2, difficulty);
+      if (col < 0 || col >= COLS || board[col][ROWS - 1] !== 0) col = c4RandomCol(board);
+      if (col >= 0) startFall(col, 2);
+    }, delay);
+  };
+  // 思考计算放到 idle/timeout 分片，避免阻塞落子动画帧
+  if (typeof window.requestIdleCallback === "function") {
+    try { window.requestIdleCallback(run, { timeout: 250 }); } catch (e) { setTimeout(run, 60); }
+  } else setTimeout(run, 60);
+}
+function endGame() {
+  phase = "over";
+  setTurnUI();
+  var s = stats[difficulty];
+  if (winner === 1) { s.w++; sWin(); }
+  else if (winner === 2) { s.l++; sLose(); }
+  else { s.d++; sDraw(); }
+  saveStats();
+  refreshRecord();
+  portalStop(winner === 1);                        // 平台埋点：一局结束
+  setTimeout(showResult, 950);
+}
+function showResult() {
+  if (phase !== "over") return;
+  var t = document.getElementById("resTitle");
+  t.className = winner === 1 ? "win" : winner === 2 ? "lose" : "draw";
+  t.textContent = winner === 1 ? "YOU WIN!" : winner === 2 ? "AI WINS" : "DRAW";
+  document.getElementById("resSub").textContent =
+    winner === 1 ? "Four in a row — nicely played." :
+    winner === 2 ? "The AI lined up four first." : "Board full — nobody connected four.";
+  var s = stats[difficulty];
+  document.getElementById("resRecord").textContent = cap(difficulty) + " record — W " + s.w + " · L " + s.l + " · D " + s.d;
+  document.getElementById("result").classList.add("show");
+}
+function startGame() {
+  board = c4NewBoard();
+  winCells = null; winner = 0; fall = null; flashT = 0;
+  document.getElementById("menu").classList.remove("show");
+  document.getElementById("result").classList.remove("show");
+  document.getElementById("diffLabel").textContent = difficulty.toUpperCase();
+  refreshRecord();
+  portalStart();                                   // 平台埋点：开始一局
+  if (firstMove === "ai" || (firstMove === "random" && Math.random() < 0.5)) aiTurn();
+  else { phase = "human"; aimCol = 3; setTurnUI(); }
+}
+function toMenu() {
+  phase = "menu"; fall = null; winCells = null;
+  document.getElementById("result").classList.remove("show");
+  document.getElementById("menu").classList.add("show");
+  refreshMenuRecord();
+  setTurnUI();
+}
+
+/* ================= 平台 SDK 事件（域名守卫见头部 loader） ================= */
+function cgSDK() { try { return window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK; } catch (e) { return false; } }
+function portalStart() { try { if (cgSDK()) window.CrazyGames.SDK.game.gameplayStart(); } catch (e) {} }
+function portalStop(didWin) {
+  try {
+    if (cgSDK()) {
+      window.CrazyGames.SDK.game.gameplayStop();
+      if (didWin) window.CrazyGames.SDK.game.happytime();
+    }
+  } catch (e) {}
+}
+
+/* ================= HUD / 菜单 ================= */
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function recordStr(d) { var s = stats[d]; return "W " + s.w + " · L " + s.l + " · D " + s.d; }
+function refreshRecord() { document.getElementById("recordTxt").textContent = recordStr(difficulty); }
+function refreshMenuRecord() { document.getElementById("menuRecord").textContent = cap(difficulty) + " record — " + recordStr(difficulty); }
+function setTurnUI() {
+  var el = document.getElementById("turn");
+  el.className = "";
+  if (phase === "human") { el.textContent = "YOUR TURN"; el.classList.add("you"); }
+  else if (phase === "ai") { el.textContent = "AI THINKING"; el.classList.add("ai", "dots"); }
+  else if (phase === "fall") { el.textContent = "\u00A0"; el.classList.add("off"); }
+  else if (phase === "over") { el.textContent = "GAME OVER"; el.classList.add("off"); }
+  else { el.textContent = "CONNECT FOUR"; el.classList.add("off"); }
+}
+function bindSeg(id, cb) {
+  var seg = document.getElementById(id);
+  var btns = seg.querySelectorAll("button");
+  for (var i = 0; i < btns.length; i++) {
+    (function (b) {
+      b.addEventListener("click", function (e) {
+        e.stopPropagation();
+        for (var j = 0; j < btns.length; j++) btns[j].classList.remove("on");
+        b.classList.add("on");
+        sClick();
+        cb(b.getAttribute("data-v"));
+      });
+    })(btns[i]);
+  }
+}
+bindSeg("segDiff", function (v) { difficulty = v; refreshRecord(); refreshMenuRecord(); });
+bindSeg("segFirst", function (v) { firstMove = v; });
+document.getElementById("startBtn").addEventListener("click", function (e) { e.stopPropagation(); ensureAudio(); sClick(); startGame(); });
+document.getElementById("againBtn").addEventListener("click", function (e) { e.stopPropagation(); sClick(); startGame(); });
+document.getElementById("menuBtn").addEventListener("click", function (e) { e.stopPropagation(); sClick(); toMenu(); });
+var muteBtn = document.getElementById("muteBtn");
+function refreshMute() { muteBtn.className = muted ? "off" : ""; }
+muteBtn.addEventListener("click", function (e) {
+  e.stopPropagation();
+  muted = !muted; saveMuted(); refreshMute();
+  if (!muted) sClick();
+});
+refreshMute();
+
+/* ================= 输入（鼠标 + 触控 + 键盘） ================= */
+function colFromX(clientX) {
+  var rect = canvas.getBoundingClientRect();
+  var x = (clientX - rect.left) / rect.width * W;
+  var c = Math.floor((x - BX) / CELL);
+  return Math.max(0, Math.min(COLS - 1, c));
+}
+canvas.addEventListener("mousemove", function (e) { if (phase === "human") aimCol = colFromX(e.clientX); });
+canvas.addEventListener("mousedown", function (e) {
+  ensureAudio();
+  if (phase === "human") { aimCol = colFromX(e.clientX); humanDrop(); }
+});
+canvas.addEventListener("touchstart", function (e) {
+  e.preventDefault(); ensureAudio();
+  if (phase === "human") aimCol = colFromX(e.touches[0].clientX);
+}, { passive: false });
+canvas.addEventListener("touchmove", function (e) {
+  e.preventDefault();
+  if (phase === "human") aimCol = colFromX(e.touches[0].clientX);
+}, { passive: false });
+canvas.addEventListener("touchend", function (e) { e.preventDefault(); humanDrop(); }, { passive: false });
+document.addEventListener("keydown", function (e) {
+  if (phase === "menu") {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startGame(); }
+    return;
+  }
+  if (phase === "over") {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startGame(); }
+    return;
+  }
+  if (phase !== "human") return;
+  if (e.key === "ArrowLeft") aimCol = Math.max(0, aimCol - 1);
+  else if (e.key === "ArrowRight") aimCol = Math.min(COLS - 1, aimCol + 1);
+  else if (e.key === "ArrowDown" || e.key === " " || e.key === "Enter") { e.preventDefault(); humanDrop(); }
+});
+
+/* ================= 启动 ================= */
+board = c4NewBoard();
+refreshRecord();
+refreshMenuRecord();
+setTurnUI();
+requestAnimationFrame(frame);
+// 调试/测试钩子（不影响游戏逻辑）
+window.__c4 = { get board() { return board; }, get phase() { return phase; } };
+</script>
+</body>
+</html>
